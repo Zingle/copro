@@ -1,0 +1,124 @@
+#!/bin/bash -e
+
+declare bin=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+declare filtered="$1"
+declare -a skipsch=()
+declare -a skiprel=()
+declare -i linenum
+declare state=dump
+declare sch rel
+
+help () {
+    echo "Usage:"
+    echo "  $(basename "$0") --schema <schema> --skip"
+    echo "  $(basename "$0") --schema <schema> --relation <rel> --skip"
+    echo
+    echo "Filter SQL DDL on STDIN to exclude specific schemas or tables."
+    echo
+    echo "OPTIONS"
+    echo
+    echo "  --help                  Show this help"
+    echo "  -s,--schema=<schema>    Select schema for proceeding options"
+    echo "  -r,--relation=<rel>     Select relation for proceeding options"
+    echo "  -x,--skip               Skip selected schema or relation"
+}
+
+use () {
+    local ref="$1"
+    local refsch=$(echo "$ref" | awk -F. '{print $1}')
+    local refrel=$(echo "$ref" | awk -F. '{print $2}')
+
+    if [ -n "$refsch" ] && [ -n "$refrel" ]; then
+        sch="$refsch"
+        rel="$refrel"
+    elif [ -n "$refsch" ]; then
+        sch="$refsch"
+        rel=
+    elif [ -n "$refrel" ]; then
+        echo "can't select '$refrel' relation without first selecting schema" >&2
+        return 1
+    else
+        echo "invalid selection '$ref'" >&2
+        return 1
+    fi
+}
+
+skip () {
+    if [ -n "$rel" ]; then
+        skiprel+=("$sch.$rel")
+    elif [ -n "$sch" ]; then
+        skipsch+=("$sch")
+    else
+        echo "must select schema or relation before using --skip"
+    fi
+}
+
+skipped () {
+    local val="$1"
+    local skip
+
+    if ! grep \\. <(echo $val) &>/dev/null; then
+        for skip in "${skipsch[@]}"; do
+            if [ "$skip" = "$val" ]; then
+                return 0
+            fi
+        done
+        return 1
+    else
+        for skip in "${skiprel[@]}"; do
+            if [ "$skip" = "$val" ]; then
+                return 0
+            fi
+        done
+        return 1
+    fi
+}
+
+opts=$(getopt -os:r:x -lhelp,schema:,relation:,skip -- "$@")
+eval set -- "$opts"
+
+while true; do
+    case "$1" in
+        --help)         help;               shift; exit;;
+        -x|--skip)      skip;               shift;;
+        -s|--schema)    use "$2";           shift 2;;
+        -r|--relation)  use "$sch.$2";      shift 2;;
+        --)                                 shift; break;;
+        *)                                  break;;
+    esac
+done
+
+while read line; do
+    linenum=$((linenum+1))
+
+    if grep "^CREATE DATABASE " <(echo "$line") &>/dev/null; then
+        sch=${line#*\`}
+        sch=${sch%\`*}
+        rel=
+
+        if skipped "$sch"; then
+            state=skip
+        else
+            state=dump
+        fi
+
+        echo $linenum: [$state] "$line" >&2
+    elif grep "^DROP TABLE IF EXISTS " <(echo "$line") &>/dev/null; then
+        if ! skipped "$sch"; then
+            rel=${line#*\`}
+            rel=${rel%\`*}
+
+            if skipped "$sch.$rel"; then
+                state=skip
+            else
+                state=dump
+            fi
+
+            echo $linenum: [$state] "$line" >&2
+        fi
+    fi
+
+    if [ $state = dump ]; then
+        echo "$line"
+    fi
+done
