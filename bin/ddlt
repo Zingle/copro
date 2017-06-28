@@ -13,7 +13,7 @@ help () {
     echo "  $(basename "$0") --schema <schema> --skip"
     echo "  $(basename "$0") --schema <schema> --relation <rel> --skip"
     echo
-    echo "Filter SQL DDL on STDIN to exclude specific schemas or tables."
+    echo "Filter SQL DDL on STDIN to exclude specified schemas or relations."
     echo
     echo "OPTIONS"
     echo
