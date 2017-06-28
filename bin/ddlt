@@ -10,8 +10,8 @@ declare sch rel
 
 help () {
     echo "Usage:"
-    echo "  $(basename "$0") --schema <schema> --skip"
-    echo "  $(basename "$0") --schema <schema> --relation <rel> --skip"
+    echo "  ... | $(basename "$0") --schema <schema> --skip"
+    echo "  ... | $(basename "$0") --schema <schema> --relation <rel> --skip"
     echo
     echo "Filter SQL DDL on STDIN to exclude specified schemas or relations."
     echo
